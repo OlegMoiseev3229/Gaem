@@ -20,6 +20,7 @@ Id_t :: enum {
 	ShowEnemiesButton,
 	PreviousEnemyButton,
 	NextEnemyButton,
+	EnemySelection,
 	//Numbers
 	Number0,
 	Number1,
@@ -61,6 +62,17 @@ Enemy :: struct {
 	type: EnemyType
 }
 
+EnemySpawnDataItem :: struct {
+	hp_scale: f32,
+	pos: [2]int,
+	type: EnemyType
+};
+
+EnemySpawnData :: struct {
+	enemies: []EnemySpawnDataItem,
+}
+
+//CONSTS
 enemy_data := [EnemyType]EnemyTypeData{
 	.SmallGuy = {
 		name = "A small guy",
@@ -74,10 +86,37 @@ enemy_data := [EnemyType]EnemyTypeData{
 		texture_size = {200, 200},
 		texture = .BiggerGuy
 	},
-	.MaxEnemyType={}
+	.MaxEnemyType={
+		name = "Missing No",
+		default_hp = 10000000,
+		texture_size = {400, 400},
+		texture = .TextureMissing
+	}
 };
 
-//CONSTS
+enemy_spawn_data := []EnemySpawnData {
+	{enemies={
+		{type=.SmallGuy, pos={200, 300}},
+	}},
+	{enemies={
+		{type=.SmallGuy, pos={100, 300}},
+		{type=.SmallGuy, pos={300, 300}},
+	}},
+	{enemies={
+		{type=.SmallGuy, pos={200, 300}, hp_scale=3.},
+	}},
+	{enemies={
+		{type=.SmallGuy, pos={100, 300}},
+		{type=.SmallGuy, pos={300, 300}},
+		{type=.BiggerGuy, pos={150, 100}},
+	}},
+	{enemies={
+		{type=.SmallGuy, pos={100, 100}},
+		{type=.SmallGuy, pos={300, 300}, hp_scale=2.},
+		{type=.BiggerGuy, pos={150, 500}},
+	}},
+}
+
 window_size :: [2]int{700, 700};
 game_window_size :: [2]int{450, 700};
 game_window_rect :: sdl.Rect{x=0, y=0, w=i32(game_window_size.x), h=i32(game_window_size.y)};
@@ -93,6 +132,7 @@ image_data := []ImageData{
 	{id=.ShowEnemiesButton, data=#load("images/show-enemies-button.jpg")},
 	{id=.PreviousEnemyButton, data=#load("images/previous-enemy-button.jpg")},
 	{id=.NextEnemyButton, data=#load("images/next-enemy-button.jpg")},
+	{id=.EnemySelection, data=#load("images/enemy-selection.jpg")},
 	{id=.Number0, data=#load("images/0.jpg")},
 	{id=.Number1, data=#load("images/1.jpg")},
 	{id=.Number2, data=#load("images/2.jpg")},
@@ -147,6 +187,8 @@ enemies : [dynamic]Enemy;
 
 damage_stat : int;
 selected_enemy : int;
+
+current_wave : int;
 
 //UTILS
 image_size :: proc(id: Id_t) -> (i32, i32) {
@@ -250,10 +292,11 @@ init :: proc() -> bool {
 	score = 0;
 
 	enemies = make([dynamic]Enemy);
-	append(&enemies, Enemy{type=.SmallGuy, max_hp=enemy_data[.SmallGuy].default_hp, hp=enemy_data[.SmallGuy].default_hp, pos=[2]int{100, 100}});
 
 	damage_stat = 1;
 	selected_enemy = 0;
+
+	current_wave = 0;
 	return true;
 }
 
@@ -299,7 +342,7 @@ draw_game :: proc() {
 	case .Game:
 		rect := game_window_rect;
 		sdl.RenderCopy(renderer, images[.GameBG], nil, &rect);
-		for enemy in enemies {
+		for enemy, i in enemies {
 			pos := enemy.pos;
 			size := enemy_data[enemy.type].texture_size;
 			rect := rect_from_dimensions_and_point(size, pos);
@@ -313,6 +356,12 @@ draw_game :: proc() {
 			sdl.RenderFillRect(renderer, &hp_rect);
 			sdl.SetRenderDrawColor(renderer, 0x10, 0x10, 0x10, 0xFF);
 			sdl.RenderDrawRect(renderer, &max_hp_rect);
+
+			if i == selected_enemy {
+				enemy_midpoint := i32(size.x/2 + pos.x);
+				selection_rect := sdl.Rect{w=50, h=50, x=enemy_midpoint - 25, y=rect.y + i32(size.y)};
+				sdl.RenderCopy(renderer, images[.EnemySelection], nil, &selection_rect);
+			}
 		}
 	case .ShowEnemies:
 		rect := game_window_rect;
@@ -357,11 +406,51 @@ draw :: proc() {
 	sdl.RenderPresent(renderer);
 }
 
+spawn_enemy :: proc(enemy_type: EnemyType, pos : [2]int, hp_scale: f32 = 1.) {
+	append(&enemies, Enemy{type=enemy_type, max_hp=int(f32(enemy_data[enemy_type].default_hp)*hp_scale), hp=int(f32(enemy_data[enemy_type].default_hp)*hp_scale), pos=pos});
+}
+
+spawn_wave :: proc(wave: int) {
+	wave := wave;
+	if wave >= len(enemy_spawn_data) {
+		wave %= len(enemy_spawn_data); // TEMP temp
+	}
+	data := enemy_spawn_data[wave];
+	for spawn in data.enemies {
+		hp_scale := spawn.hp_scale;
+		if hp_scale == 0. {
+			hp_scale = 1.;
+		}
+		spawn_enemy(spawn.type, spawn.pos, hp_scale=hp_scale);
+	}
+}
+
+do_damage_to_selected_enemy :: proc(damage: int) {
+	if selected_enemy >= len(enemies) {
+		selected_enemy = 0;
+		return;
+	}
+	enemies[selected_enemy].hp -= damage;
+	if enemies[selected_enemy].hp <= 0 {
+		enemies[selected_enemy].hp = 0;
+		unordered_remove(&enemies, selected_enemy);
+		if selected_enemy <= len(enemies) {
+			selected_enemy = 0;
+		}
+	}
+
+	if len(enemies) <= 0 {
+		current_wave += 1;
+		spawn_wave(current_wave);
+	}
+}
+
 do_buttons :: proc(mouse_pos: [2]int) {
 	switch game_state {
 	case .TitleScreen:
 		if point_in_rect(mouse_pos, start_button_rect) {
 			game_state = .Game;
+			spawn_wave(current_wave);
 		}
 		if point_in_rect(mouse_pos, show_enemies_button_rect) {
 			game_state = .ShowEnemies;
@@ -369,11 +458,7 @@ do_buttons :: proc(mouse_pos: [2]int) {
 		}
 	case .Game:
 		if point_in_rect(mouse_pos, the_button_rect) {
-			enemies[selected_enemy].hp -= damage_stat;
-			if enemies[selected_enemy].hp < 0 {
-				enemies[selected_enemy].hp = 0;
-			}
-			sdl.Log("hp = %d\n", enemies[selected_enemy].hp);
+			do_damage_to_selected_enemy(damage_stat);
 		}
 	case .ShowEnemies:
 		if point_in_rect(mouse_pos, previous_enemy_button_rect) {
@@ -411,6 +496,10 @@ main :: proc() {
 		sdl.LogError(0, cstring("Failed to init!\n"));
 		return;
 	}
+
+	//write_spawn_data("temp.txt", enemy_spawn_data);
+	spawn_data := load_spawn_data("temp.txt");
+	enemy_spawn_data = spawn_data;
 
 	mainloop();
 
