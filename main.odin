@@ -1,4 +1,6 @@
 package main
+import "core:os"
+import "core:math"
 import sdl "vendor:sdl2"
 import sdl_image "vendor:sdl2/image"
 
@@ -7,6 +9,7 @@ GameState :: enum {
 	TitleScreen,
 	Game,
 	ShowEnemies,
+	CreateLevel,
 }
 
 Id_t :: enum {
@@ -21,6 +24,7 @@ Id_t :: enum {
 	PreviousEnemyButton,
 	NextEnemyButton,
 	EnemySelection,
+	CreateLevelButton,
 	//Numbers
 	Number0,
 	Number1,
@@ -94,7 +98,8 @@ enemy_data := [EnemyType]EnemyTypeData{
 	}
 };
 
-enemy_spawn_data := []EnemySpawnData {
+enemy_spawn_data :[]EnemySpawnData;
+/*{
 	{enemies={
 		{type=.SmallGuy, pos={200, 300}},
 	}},
@@ -116,35 +121,40 @@ enemy_spawn_data := []EnemySpawnData {
 		{type=.BiggerGuy, pos={150, 500}},
 	}},
 }
+*/
 
 window_size :: [2]int{700, 700};
 game_window_size :: [2]int{450, 700};
 game_window_rect :: sdl.Rect{x=0, y=0, w=i32(game_window_size.x), h=i32(game_window_size.y)};
 
 missing_texture_data := #load("images/texture-missing.jpg");
-image_data := []ImageData{
-	{id=.TextureMissing, data=missing_texture_data},
-	{id=.TheButton, data=#load("images/the-button.jpg")},
-	{id=.GameBG, data=#load("images/game-bg.jpg")},
-	{id=.TitleScreen, data=#load("images/title-screen.jpg")},
-	{id=.TitleScreenBlank, data=#load("images/title-screen-blank.jpg")},
-	{id=.StartButton, data=#load("images/start-button.jpg")},
-	{id=.ShowEnemiesButton, data=#load("images/show-enemies-button.jpg")},
-	{id=.PreviousEnemyButton, data=#load("images/previous-enemy-button.jpg")},
-	{id=.NextEnemyButton, data=#load("images/next-enemy-button.jpg")},
-	{id=.EnemySelection, data=#load("images/enemy-selection.jpg")},
-	{id=.Number0, data=#load("images/0.jpg")},
-	{id=.Number1, data=#load("images/1.jpg")},
-	{id=.Number2, data=#load("images/2.jpg")},
-	{id=.Number3, data=#load("images/3.jpg")},
-	{id=.Number4, data=#load("images/4.jpg")},
-	{id=.Number5, data=#load("images/5.jpg")},
-	{id=.Number6, data=#load("images/6.jpg")},
-	{id=.Number7, data=#load("images/7.jpg")},
-	{id=.Number8, data=#load("images/8.jpg")},
-	{id=.Number9, data=#load("images/9.jpg")},
-	{id=.SmallGuy, data=#load("images/small-guy.jpg")},
-	{id=.BiggerGuy, data=#load("images/bigger-guy.jpg")},
+image_data := [Id_t][]u8{
+	.TextureMissing = missing_texture_data,
+	//UI
+	.TheButton = #load("images/the-button.jpg"),
+	.GameBG = #load("images/game-bg.jpg"),
+	.TitleScreen = #load("images/title-screen.jpg"),
+	.TitleScreenBlank = #load("images/title-screen-blank.jpg"),
+	.StartButton = #load("images/start-button.jpg"),
+	.ShowEnemiesButton = #load("images/show-enemies-button.jpg"),
+	.PreviousEnemyButton = #load("images/previous-enemy-button.jpg"),
+	.NextEnemyButton = #load("images/next-enemy-button.jpg"),
+	.EnemySelection = #load("images/enemy-selection.jpg"),
+	.CreateLevelButton = #load("images/create-level-button.jpg"),
+	//Numbers
+	.Number0 = #load("images/0.jpg"),
+	.Number1 = #load("images/1.jpg"),
+	.Number2 = #load("images/2.jpg"),
+	.Number3 = #load("images/3.jpg"),
+	.Number4 = #load("images/4.jpg"),
+	.Number5 = #load("images/5.jpg"),
+	.Number6 = #load("images/6.jpg"),
+	.Number7 = #load("images/7.jpg"),
+	.Number8 = #load("images/8.jpg"),
+	.Number9 = #load("images/9.jpg"),
+	//Enemies
+	.SmallGuy = #load("images/small-guy.jpg"),
+	.BiggerGuy = #load("images/bigger-guy.jpg"),
 };
 
 digit_ids := [10]Id_t{
@@ -164,7 +174,8 @@ milliseconds_per_frame :: 32;
 
 the_button_rect :: sdl.Rect{x=i32(game_window_size.x+10), y=400, w=230, h=230}
 start_button_rect :: sdl.Rect{x=i32(game_window_size.x+50), y=100, w=150, h=100};
-show_enemies_button_rect :: sdl.Rect{x=i32(game_window_size.x+50), y=400, w=150, h=100};
+show_enemies_button_rect :: sdl.Rect{x=i32(game_window_size.x+50), y=300, w=150, h=100};
+create_level_button_rect :: sdl.Rect{x=i32(game_window_size.x+50), y=500, w=150, h=100};
 previous_enemy_button_rect :: sdl.Rect{x=i32(game_window_size.x+25),y=i32(window_size.y - 200), w=75, h=75};
 next_enemy_button_rect :: sdl.Rect{x=i32(window_size.x - 75 - 25),y=i32(window_size.y - 200), w=75, h=75};
 
@@ -189,6 +200,8 @@ damage_stat : int;
 selected_enemy : int;
 
 current_wave : int;
+
+current_enemy_page : int;
 
 //UTILS
 image_size :: proc(id: Id_t) -> (i32, i32) {
@@ -236,8 +249,8 @@ init_images :: proc() -> bool {
 		images[id] = texture;
 	}
 
-	for data in image_data {
-		surface := sdl_image.Load_RW(sdl.RWFromMem(raw_data(data.data), i32(len(data.data))), true);
+	for id in Id_t {
+		surface := sdl_image.Load_RW(sdl.RWFromMem(raw_data(image_data[id]), i32(len(image_data[id]))), true);
 		if surface == nil {
 			return false;
 		}
@@ -248,14 +261,14 @@ init_images :: proc() -> bool {
 			return false;
 		}
 
-		image_surfaces[data.id] = surface;
+		image_surfaces[id] = surface;
 		texture := sdl.CreateTextureFromSurface(renderer, surface); 
-		sdl.FreeSurface(image_surfaces[data.id]); // delete this line if surfaces are needed to be kept
+		sdl.FreeSurface(image_surfaces[id]); // delete this line if surfaces are needed to be kept
 		if texture == nil {
 			sdl.Log(sdl.GetError());
 			return false;
 		}
-		images[data.id] = texture;
+		images[id] = texture;
 	}
 	return true;
 }
@@ -295,6 +308,8 @@ init :: proc() -> bool {
 
 	damage_stat = 1;
 	selected_enemy = 0;
+
+	current_enemy_page = 0;
 
 	current_wave = 0;
 	return true;
@@ -371,7 +386,37 @@ draw_game :: proc() {
 		pos := game_window_size/2 - enemy_size/2;
 		rect = rect_from_dimensions_and_point(enemy_size, pos);
 		sdl.RenderCopy(renderer, images[enemy_data[show_enemy_type].texture], nil,  &rect);
+	case .CreateLevel:
+		rect := game_window_rect;
+		sdl.RenderCopy(renderer, images[.GameBG], nil, &rect);
 	}
+}
+
+enemy_page_width :: 3;
+enemy_page_height :: 5;
+n_enemies_per_page :: enemy_page_width*enemy_page_height;
+
+get_number_of_enemy_pages :: proc() -> int {
+	n_enemies := int(EnemyType.MaxEnemyType);
+	if n_enemies % n_enemies_per_page == 0 {
+		return n_enemies/n_enemies_per_page;
+	} else {
+		return n_enemies/n_enemies_per_page + 1;
+	}
+}
+
+get_enemies_page :: proc(page_n : int) -> (enemies_page: [n_enemies_per_page]EnemyType) {
+	first_enemy_n := page_n*n_enemies_per_page;
+	for i in 0..< n_enemies_per_page {
+		enemy_n := i+first_enemy_n;
+		if  enemy_n >= int(EnemyType.MaxEnemyType) {
+			enemies_page[i] = EnemyType.MaxEnemyType;
+			continue;
+		}
+		enemy := EnemyType(enemy_n);
+		enemies_page[i] = enemy;
+	}
+	return;
 }
 
 draw_toolbar :: proc() {
@@ -385,6 +430,8 @@ draw_toolbar :: proc() {
 		sdl.RenderCopy(renderer, images[.StartButton], nil, &rect);
 		rect = show_enemies_button_rect;
 		sdl.RenderCopy(renderer, images[.ShowEnemiesButton], nil, &rect);
+		rect = create_level_button_rect;
+		sdl.RenderCopy(renderer, images[.CreateLevelButton], nil, &rect);
 	case .Game:
 		draw_number(score, sdl.Rect{w=240, h=40, x=i32(game_window_size.x), y=50}, 6);
 		rect := the_button_rect;
@@ -395,6 +442,53 @@ draw_toolbar :: proc() {
 		rect = next_enemy_button_rect;
 		sdl.RenderCopy(renderer, images[.NextEnemyButton], nil, &rect);
 		draw_number(uint(show_enemy_type), sdl.Rect{w=40*3, h=40, x=previous_enemy_button_rect.x+40, y=next_enemy_button_rect.y+next_enemy_button_rect.h+10}, 3);
+	case .CreateLevel:
+		rect := previous_enemy_button_rect;
+		sdl.RenderCopy(renderer, images[.PreviousEnemyButton], nil, &rect);
+		rect = next_enemy_button_rect;
+		sdl.RenderCopy(renderer, images[.NextEnemyButton], nil, &rect);
+		n_enemy_pages := get_number_of_enemy_pages();
+		draw_number(uint(current_enemy_page), sdl.Rect{w=40*3, h=40, x=previous_enemy_button_rect.x+40, y=next_enemy_button_rect.y+next_enemy_button_rect.h+10}, 3);
+
+		//Draw enemy types
+		enemy_page_type_array := get_enemies_page(current_enemy_page);
+		enemy_background_rects : [n_enemies_per_page]sdl.Rect;
+		enemy_background_rect_size : i32 = 70;
+		enemy_background_rect_padding : i32 = 10;
+		enemy_background_rect := sdl.Rect{y=100, w=enemy_background_rect_size, h=enemy_background_rect_size};
+		for y in 0..<enemy_page_height {
+			enemy_background_rect.x = toolbar_rect.x+enemy_background_rect_padding;
+			for x in 0..<enemy_page_width {
+				enemy_background_rects[x + y*enemy_page_width] = enemy_background_rect;
+
+				enemy_background_rect.x += enemy_background_rect_size;
+				enemy_background_rect.x += enemy_background_rect_padding;
+			}
+			enemy_background_rect.y += enemy_background_rect_size;
+			enemy_background_rect.y += enemy_background_rect_padding;
+		}
+
+		sdl.SetRenderDrawColor(renderer, 0xAA, 0xAA, 0xAA, 0xFF);
+		sdl.RenderFillRects(renderer, raw_data(&enemy_background_rects), len(enemy_background_rects));
+
+		enemy_rect_size : i32 = 70;
+		enemy_rect_padding : i32 = 10;
+		enemy_rect := sdl.Rect{y=100, w=enemy_rect_size, h=enemy_rect_size};
+
+		for y in 0..<enemy_page_height {
+			enemy_rect.x = toolbar_rect.x+enemy_rect_padding;
+			for x in 0..<enemy_page_width {
+				enemy_type := enemy_page_type_array[x + y*enemy_page_width];
+				if enemy_type != .MaxEnemyType {
+					sdl.RenderCopy(renderer, images[enemy_data[enemy_type].texture], nil, &enemy_rect);
+				}
+
+				enemy_rect.x += enemy_rect_size;
+				enemy_rect.x += enemy_rect_padding;
+			}
+			enemy_rect.y += enemy_rect_size;
+			enemy_rect.y += enemy_rect_padding;
+		}
 	}
 }
 
@@ -456,6 +550,10 @@ do_buttons :: proc(mouse_pos: [2]int) {
 			game_state = .ShowEnemies;
 			show_enemy_type = EnemyType(0);
 		}
+		if point_in_rect(mouse_pos, create_level_button_rect) {
+			game_state = .CreateLevel;
+			current_enemy_page = 0;
+		}
 	case .Game:
 		if point_in_rect(mouse_pos, the_button_rect) {
 			do_damage_to_selected_enemy(damage_stat);
@@ -467,11 +565,13 @@ do_buttons :: proc(mouse_pos: [2]int) {
 		if point_in_rect(mouse_pos, next_enemy_button_rect) {
 			show_enemy_type = EnemyType((int(show_enemy_type) + 1)%%int(EnemyType.MaxEnemyType));
 		}
+	case .CreateLevel:
+
 	}
 }
 
 mainloop :: proc() {
-	for true {
+	for {
 		e : sdl.Event;
 		for sdl.PollEvent(&e) {
 			#partial switch e.type {
