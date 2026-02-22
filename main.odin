@@ -519,6 +519,14 @@ spawn_wave :: proc(wave: int) {
 	}
 }
 
+get_enemy_rect :: proc(enemy: Enemy) -> (enemy_rect: sdl.Rect) {
+	enemy_rect.x = i32(enemy.pos.x);
+	enemy_rect.y = i32(enemy.pos.y);
+	enemy_rect.w = i32(enemy_data[enemy.type].texture_size.x);
+	enemy_rect.h = i32(enemy_data[enemy.type].texture_size.y);
+	return;
+}
+
 do_damage_to_selected_enemy :: proc(damage: int) {
 	if selected_enemy >= len(enemies) {
 		selected_enemy = 0;
@@ -557,6 +565,11 @@ do_buttons :: proc(mouse_pos: [2]int) {
 	case .Game:
 		if point_in_rect(mouse_pos, the_button_rect) {
 			do_damage_to_selected_enemy(damage_stat);
+		}
+		for enemy, i in enemies {
+			if point_in_rect(mouse_pos, get_enemy_rect(enemy)) {
+				selected_enemy = i;
+			}
 		}
 	case .ShowEnemies:
 		if point_in_rect(mouse_pos, previous_enemy_button_rect) {
