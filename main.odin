@@ -126,6 +126,7 @@ enemy_spawn_data :[]EnemySpawnData;
 window_size :: [2]int{700, 700};
 game_window_size :: [2]int{450, 700};
 game_window_rect :: sdl.Rect{x=0, y=0, w=i32(game_window_size.x), h=i32(game_window_size.y)};
+toolbar_rect := sdl.Rect{x=i32(game_window_size.x), y=0, w=i32(window_size.x-game_window_size.x), h=i32(window_size.y)};
 
 missing_texture_data := #load("images/texture-missing.jpg");
 image_data := [Id_t][]u8{
@@ -419,8 +420,25 @@ get_enemies_page :: proc(page_n : int) -> (enemies_page: [n_enemies_per_page]Ene
 	return;
 }
 
+get_level_creation_enemy_background_rects :: proc() ->  (enemy_background_rects : [enemy_page_height][enemy_page_width]sdl.Rect){
+	enemy_background_rect_size : i32 = 70;
+	enemy_background_rect_padding : i32 = 10;
+	enemy_background_rect := sdl.Rect{y=100, w=enemy_background_rect_size, h=enemy_background_rect_size};
+	for y in 0..<enemy_page_height {
+		enemy_background_rect.x = toolbar_rect.x+enemy_background_rect_padding;
+		for x in 0..<enemy_page_width {
+			enemy_background_rects[y][x] = enemy_background_rect;
+
+			enemy_background_rect.x += enemy_background_rect_size;
+			enemy_background_rect.x += enemy_background_rect_padding;
+		}
+		enemy_background_rect.y += enemy_background_rect_size;
+		enemy_background_rect.y += enemy_background_rect_padding;
+	}
+	return;
+}
+
 draw_toolbar :: proc() {
-	toolbar_rect := sdl.Rect{x=i32(game_window_size.x), y=0, w=i32(window_size.x-game_window_size.x), h=i32(window_size.y)};
 	sdl.SetRenderDrawColor(renderer, 0xA0, 0x60, 0xA0, 0xFF);
 	sdl.RenderFillRect(renderer, &toolbar_rect);
 
@@ -451,43 +469,21 @@ draw_toolbar :: proc() {
 		draw_number(uint(current_enemy_page), sdl.Rect{w=40*3, h=40, x=previous_enemy_button_rect.x+40, y=next_enemy_button_rect.y+next_enemy_button_rect.h+10}, 3);
 
 		//Draw enemy types
-		enemy_page_type_array := get_enemies_page(current_enemy_page);
-		enemy_background_rects : [n_enemies_per_page]sdl.Rect;
-		enemy_background_rect_size : i32 = 70;
-		enemy_background_rect_padding : i32 = 10;
-		enemy_background_rect := sdl.Rect{y=100, w=enemy_background_rect_size, h=enemy_background_rect_size};
-		for y in 0..<enemy_page_height {
-			enemy_background_rect.x = toolbar_rect.x+enemy_background_rect_padding;
-			for x in 0..<enemy_page_width {
-				enemy_background_rects[x + y*enemy_page_width] = enemy_background_rect;
-
-				enemy_background_rect.x += enemy_background_rect_size;
-				enemy_background_rect.x += enemy_background_rect_padding;
-			}
-			enemy_background_rect.y += enemy_background_rect_size;
-			enemy_background_rect.y += enemy_background_rect_padding;
-		}
+		enemy_background_rects := get_level_creation_enemy_background_rects();
 
 		sdl.SetRenderDrawColor(renderer, 0xAA, 0xAA, 0xAA, 0xFF);
-		sdl.RenderFillRects(renderer, raw_data(&enemy_background_rects), len(enemy_background_rects));
+		sdl.RenderFillRects(renderer, raw_data(raw_data(&enemy_background_rects)), len(enemy_background_rects)*len(enemy_background_rects[0]));
 
-		enemy_rect_size : i32 = 70;
-		enemy_rect_padding : i32 = 10;
-		enemy_rect := sdl.Rect{y=100, w=enemy_rect_size, h=enemy_rect_size};
+		enemy_page_type_array := get_enemies_page(current_enemy_page);
 
 		for y in 0..<enemy_page_height {
-			enemy_rect.x = toolbar_rect.x+enemy_rect_padding;
 			for x in 0..<enemy_page_width {
+				enemy_rect := enemy_background_rects[y][x]
 				enemy_type := enemy_page_type_array[x + y*enemy_page_width];
 				if enemy_type != .MaxEnemyType {
 					sdl.RenderCopy(renderer, images[enemy_data[enemy_type].texture], nil, &enemy_rect);
 				}
-
-				enemy_rect.x += enemy_rect_size;
-				enemy_rect.x += enemy_rect_padding;
 			}
-			enemy_rect.y += enemy_rect_size;
-			enemy_rect.y += enemy_rect_padding;
 		}
 	}
 }
@@ -566,6 +562,7 @@ do_buttons :: proc(mouse_pos: [2]int) {
 		if point_in_rect(mouse_pos, the_button_rect) {
 			do_damage_to_selected_enemy(damage_stat);
 		}
+		// select an enemy by clicking on it
 		for enemy, i in enemies {
 			if point_in_rect(mouse_pos, get_enemy_rect(enemy)) {
 				selected_enemy = i;
@@ -579,7 +576,18 @@ do_buttons :: proc(mouse_pos: [2]int) {
 			show_enemy_type = EnemyType((int(show_enemy_type) + 1)%%int(EnemyType.MaxEnemyType));
 		}
 	case .CreateLevel:
-
+		enemy_rects := get_level_creation_enemy_background_rects();
+		enemy_types := get_enemies_page(current_enemy_page);
+		for enemy_rect_row, y in enemy_rects {
+			for enemy_rect, x in enemy_rect_row {
+				if point_in_rect(mouse_pos, enemy_rect) {
+					enemy_type := enemy_types[x + y*enemy_page_width];
+					if enemy_type != .MaxEnemyType {
+						sdl.Log("Clicked on an enemy!\n");;
+					}
+				}
+			}
+		}
 	}
 }
 
